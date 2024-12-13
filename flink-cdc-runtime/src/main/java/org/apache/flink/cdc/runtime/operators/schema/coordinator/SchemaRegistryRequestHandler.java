@@ -240,13 +240,6 @@ public class SchemaRegistryRequestHandler implements Closeable {
             TableId tableId, List<SchemaChangeEvent> derivedSchemaChangeEvents) {
         for (SchemaChangeEvent changeEvent : derivedSchemaChangeEvents) {
             if (changeEvent.getType() != SchemaChangeEventType.CREATE_TABLE) {
-                if (schemaChangeBehavior == SchemaChangeBehavior.EXCEPTION) {
-                    // throw exception after all sink flush success
-                    throw new RuntimeException(
-                            String.format(
-                                    "Refused to apply schema change event %s in EXCEPTION mode.",
-                                    changeEvent));
-                }
                 if (schemaChangeBehavior == SchemaChangeBehavior.IGNORE) {
                     currentIgnoredSchemaChanges.add(changeEvent);
                     continue;
@@ -324,6 +317,19 @@ public class SchemaRegistryRequestHandler implements Closeable {
             LOG.info(
                     "All sink subtask have flushed for table {}. Start to apply schema change.",
                     tableId.toString());
+            if (schemaChangeBehavior == SchemaChangeBehavior.EXCEPTION
+                    && currentDerivedSchemaChangeEvents.stream()
+                            .anyMatch(
+                                    event ->
+                                            event.getType()
+                                                    == SchemaChangeEventType.CREATE_TABLE)) {
+                // we will throw exception after all sink flush data
+                throw new RuntimeException(
+                        String.format(
+                                "Refused to apply schema change event %s in EXCEPTION mode.",
+                                currentDerivedSchemaChangeEvents));
+            }
+            
             schemaChangeThreadPool.submit(
                     () -> applySchemaChange(tableId, currentDerivedSchemaChangeEvents));
         }
